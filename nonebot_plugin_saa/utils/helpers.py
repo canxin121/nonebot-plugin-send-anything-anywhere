@@ -1,9 +1,7 @@
-from typing import cast
-
 from nonebot.internal.adapter.bot import Bot
 
-from .exceptions import AdapterNotSupported
 from .const import SupportedAdapters, supported_adapter_names
+from .exceptions import AdapterNotSupported
 
 
 def extract_adapter_type(bot: Bot) -> SupportedAdapters:
@@ -12,4 +10,4 @@ def extract_adapter_type(bot: Bot) -> SupportedAdapters:
         raise AdapterNotSupported(adapter_name)
 
     adapter_name = SupportedAdapters(adapter_name)
-    return cast(SupportedAdapters, adapter_name)
+    return adapter_name

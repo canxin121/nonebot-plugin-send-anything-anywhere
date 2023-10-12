@@ -1,23 +1,23 @@
+from functools import partial
 from io import BytesIO
 from pathlib import Path
-from functools import partial
-from typing import Any, Dict, Literal, cast
+from typing import cast, Any, Union, Optional
 
-from nonebot.adapters import Event
 from nonebot.adapters import Bot as BaseBot
+from nonebot.adapters import Event
 
 from ..types import Text, Image, Reply, Mention
-from ..utils.platform_send_target import TargetFeishuGroup, TargetFeishuPrivate
 from ..utils import (
-    Receipt,
     MessageFactory,
     SupportedAdapters,
     MessageSegmentFactory,
     register_sender,
+    register_get_bot_id,
     register_ms_adapter,
     assamble_message_factory,
-    register_target_extractor,
+    register_target_extractor, Receipt, get_bot_id,
 )
+from ..utils.platform_send_target import TargetFeishuGroup, TargetFeishuPrivate
 
 try:
     import httpx
@@ -34,11 +34,13 @@ try:
     adapter = SupportedAdapters.feishu
     register_feishu = partial(register_ms_adapter, adapter)
 
-    MessageFactory.register_adapter_message(adapter, Message)
+    MessageFactory.register_adapter_message(SupportedAdapters.feishu, Message)
+
 
     @register_feishu(Text)
     def _text(t: Text) -> MessageSegment:
         return MessageSegment.text(t.data["text"])
+
 
     @register_feishu(Image)
     async def _image(i: Image, bot: BaseBot) -> MessageSegment:
@@ -63,39 +65,67 @@ try:
         file_key = result["image_key"]
         return MessageSegment.image(file_key)
 
+
     @register_feishu(Mention)
     def _mention(m: Mention) -> MessageSegment:
         return MessageSegment.at(m.data["user_id"])
 
+
     @register_feishu(Reply)
     def _reply(r: Reply) -> MessageSegment:
         return MessageSegment("reply", cast(dict, r.data))
+
 
     @register_target_extractor(PrivateMessageEvent)
     def _extract_private_msg_event(event: Event) -> TargetFeishuPrivate:
         assert isinstance(event, PrivateMessageEvent)
         return TargetFeishuPrivate(open_id=event.get_user_id())
 
+
     @register_target_extractor(GroupMessageEvent)
     def _extract_channel_msg_event(event: Event) -> TargetFeishuGroup:
         assert isinstance(event, GroupMessageEvent)
         return TargetFeishuGroup(chat_id=event.event.message.chat_id)
 
+
     class FeishuReceipt(Receipt):
-        message_id: str
-        adapter_name: Literal[adapter] = adapter
-        data: Dict[str, Any]
+        sent_msg: Optional[dict]
+        message_id: Union[str, int]
+        mention_user_id: Optional[Union[str, int]]
+        adapter_name = adapter
 
         async def revoke(self):
-            bot = cast(Bot, self._get_bot())
-            params = {"method": "DELETE"}
-            return await bot.call_api(f"im/v1/messages/{self.message_id}", **params)
+            return await self._get_bot().call_api(f"im/v1/messages/{self.message_id}", **{
+                "method": "DELETE",
+            })
+
+        async def edit(self, msg, at_sender=False, reply=False):
+            bot = self._get_bot()
+            if at_sender:
+                msg = msg + Mention(user_id=self.mention_user_id)
+
+            message_to_send = Message()
+            for message_segment_factory in msg:
+                message_segment = await message_segment_factory.build(bot)
+                message_to_send += message_segment
+
+            msg_type, content = MessageSerializer(message_to_send).serialize()
+
+            params = {
+                "method": "PUT",
+                "body": {
+                    "content": content,
+                    "msg_type": msg_type,
+                },
+            }
+            await bot.call_api(f"im/v1/messages/{self.message_id}", **params)
 
         @property
         def raw(self) -> Any:
-            return self.data
+            return self.sent_msg
 
-    @register_sender(adapter)
+
+    @register_sender(SupportedAdapters.feishu)
     async def send(
         bot,
         msg: MessageFactory[MessageSegmentFactory],
@@ -149,18 +179,28 @@ try:
                     "msg_type": msg_type,
                 },
             }
-            resp = await bot.call_api("im/v1/messages", **params)
+            sent_msg = await bot.call_api("im/v1/messages", **params)
 
         else:
             params = {
                 "method": "POST",
                 "body": {"content": content, "msg_type": msg_type},
             }
-            resp = await bot.call_api(
-                f"im/v1/messages/{reply_to_message_id}/reply", **params
-            )
-        message_id = resp["message_id"]
-        return FeishuReceipt(bot_id=bot.self_id, message_id=message_id, data=resp)
+            sent_msg = await bot.call_api(f"im/v1/messages/{reply_to_message_id}/reply", **params)  # noqa: E501
+        return FeishuReceipt(bot_id=get_bot_id(bot), sent_msg=sent_msg, message_id=sent_msg["message_id"],
+                             mention_user_id=event.get_user_id())
+
+
+    @register_get_bot_id(adapter)
+    def _get_id(bot: BaseBot):
+        assert isinstance(bot, Bot)
+        return bot.self_id
+
+
+    @register_get_bot_id(adapter)
+    def _get_id(bot: BaseBot):
+        assert isinstance(bot, Bot)
+        return bot.self_id
 
 except ImportError:
     pass

@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 from nonebot import get_driver
 from nonebot.adapters import Bot, Event
@@ -18,6 +18,7 @@ from ..utils import (
     SupportedAdapters,
     SupportedPlatform,
     MessageSegmentFactory,
+    register_get_bot_id,
     register_sender,
     register_ms_adapter,
     register_list_targets,
@@ -95,14 +96,15 @@ try:
         }
 
     class RedReceipt(Receipt):
-        adapter_name: Literal[adapter] = adapter
-        message: MessageModel
-
+        adapter_name = adapter
+        sent_msg: MessageModel
+        message_id: Union[str, int]
+        
         async def revoke(self):
             return await cast(BotRed, self._get_bot()).recall_message(
-                self.message.chatType,
-                self.message.peerUid,
-                self.message.msgId,
+                self.sent_msg.chatType,
+                self.sent_msg.peerUin,
+                self.sent_msg.msgId,
             )
 
         @property
@@ -137,7 +139,7 @@ try:
             message_to_send += message_segment
         resp = await bot.send_message(message=message_to_send, **target.arg_dict(bot))
 
-        return RedReceipt(bot_id=bot.self_id, message=resp)
+        return RedReceipt(bot_id=bot.self_id, sent_msg=resp, message_id=resp.msgId)
 
     @AggregatedMessageFactory.register_aggregated_sender(adapter)
     async def aggregate_send(
@@ -194,6 +196,11 @@ try:
 
         return targets
 
+    @register_get_bot_id(adapter)
+    def _get_id(bot):
+        assert isinstance(bot, BotRed)
+        return bot.self_id
+    
 except ImportError:
     pass
 except Exception as e:

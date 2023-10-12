@@ -1,8 +1,9 @@
 from functools import partial
-from typing import List, Literal
+from typing import List, Union, Optional
 
-from nonebot.adapters import Event
+
 from nonebot.adapters import Bot as BaseBot
+from nonebot.adapters import Event
 
 from ..types import Text, Image, Reply, Mention
 from ..utils import (
@@ -14,7 +15,9 @@ from ..utils import (
     TargetQQGuildDirect,
     TargetQQGuildChannel,
     MessageSegmentFactory,
+    get_bot_id,
     register_sender,
+    register_get_bot_id,
     register_ms_adapter,
     register_qqguild_dms,
     register_list_targets,
@@ -39,9 +42,11 @@ try:
 
     MessageFactory.register_adapter_message(adapter, Message)
 
+
     @register_qqguild(Text)
     def _text(t: Text) -> MessageSegment:
         return MessageSegment.text(t.data["text"])
+
 
     @register_qqguild(Image)
     def _image(i: Image) -> MessageSegment:
@@ -50,13 +55,16 @@ try:
         else:
             return MessageSegment.file_image(i.data["image"])
 
+
     @register_qqguild(Mention)
     def _mention(m: Mention) -> MessageSegment:
         return MessageSegment.mention_user(int(m.data["user_id"]))
 
+
     @register_qqguild(Reply)
     def _reply(r: Reply) -> MessageSegment:
         return MessageSegment.reference(r.data["message_id"])
+
 
     @register_target_extractor(MessageEvent)
     def extract_message_event(event: Event) -> PlatformTarget:
@@ -72,6 +80,7 @@ try:
         else:
             raise ValueError(f"{type(event)} not supported")
 
+
     @register_qqguild_dms(adapter)
     async def get_dms(target: TargetQQGuildDirect, bot: BaseBot) -> int:
         assert isinstance(bot, Bot)
@@ -83,22 +92,27 @@ try:
         assert dms.guild_id
         return dms.guild_id
 
+
     class QQGuildReceipt(Receipt):
-        sent_msg: ApiMessage
-        adapter_name: Literal[adapter] = adapter
+        sent_msg: Optional[ApiMessage]
+        message_id: Union[str, int]
+        adapter_name = adapter
+
 
         async def revoke(self, hidetip=False):
             assert self.sent_msg.channel_id
             assert self.sent_msg.id
             return await self._get_bot().delete_message(
                 channel_id=self.sent_msg.channel_id,
-                message_id=self.sent_msg.id,
+                message_id=self.message_id,
                 hidetip=hidetip,
             )
 
         @property
         def raw(self):
             return self.sent_msg
+
+
 
     @register_sender(SupportedAdapters.qqguild)
     async def send(
@@ -189,8 +203,10 @@ try:
                     markdown=markdown,  # type: ignore
                     message_reference=reference,  # type: ignore
                 )
+                
+        return QQGuildReceipt(bot_id=get_bot_id(bot), sent_msg=sent_msg, message_id=sent_msg.id)
 
-        return QQGuildReceipt(bot_id=bot.self_id, sent_msg=sent_msg)
+
 
     @register_list_targets(SupportedAdapters.qqguild)
     async def list_targets(bot: BaseBot) -> List[PlatformTarget]:
@@ -211,6 +227,13 @@ try:
                 )
 
         return targets
+
+
+
+    @register_get_bot_id(adapter)
+    def _get_id(bot: BaseBot):
+        assert isinstance(bot, Bot)
+        return bot.self_id
 
 except ImportError:
     pass

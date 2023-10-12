@@ -1,5 +1,6 @@
 from functools import partial
-from typing import Any, Dict, List, Union, Literal, Optional, cast
+from typing import Any, Dict, List, Union, Optional, cast
+
 
 from nonebot.adapters import Bot, Event
 
@@ -14,7 +15,9 @@ from ..utils import (
     SupportedPlatform,
     MessageSegmentFactory,
     AggregatedMessageFactory,
+    get_bot_id,
     register_sender,
+    register_get_bot_id,
     register_ms_adapter,
     register_list_targets,
     register_convert_to_arg,
@@ -49,37 +52,45 @@ try:
 
     MessageFactory.register_adapter_message(SupportedAdapters.onebot_v11, Message)
 
+
     @register_onebot_v11(Text)
     def _text(t: Text) -> MessageSegment:
         return MessageSegment.text(t.data["text"])
+
 
     @register_onebot_v11(Image)
     async def _image(i: Image) -> MessageSegment:
         return MessageSegment.image(i.data["image"])
 
+
     @register_onebot_v11(Mention)
     async def _mention(m: Mention) -> MessageSegment:
         return MessageSegment.at(m.data["user_id"])
 
+
     @register_onebot_v11(Reply)
     async def _reply(r: Reply) -> MessageSegment:
         return MessageSegment.reply(int(r.data["message_id"]))
+
 
     @register_target_extractor(PrivateMessageEvent)
     def _extract_private_msg_event(event: Event) -> TargetQQPrivate:
         assert isinstance(event, PrivateMessageEvent)
         return TargetQQPrivate(user_id=event.user_id)
 
+
     @register_target_extractor(GroupMessageEvent)
     def _extract_group_msg_event(event: Event) -> TargetQQGroup:
         assert isinstance(event, GroupMessageEvent)
         return TargetQQGroup(group_id=event.group_id)
+
 
     @register_target_extractor(FriendAddNoticeEvent)
     @register_target_extractor(FriendRecallNoticeEvent)
     def _extract_friend_notice_event(event: Event) -> TargetQQPrivate:
         assert isinstance(event, (FriendAddNoticeEvent, FriendRecallNoticeEvent))
         return TargetQQPrivate(user_id=event.user_id)
+
 
     @register_target_extractor(GroupBanNoticeEvent)
     @register_target_extractor(GroupAdminNoticeEvent)
@@ -101,21 +112,25 @@ try:
         )
         return TargetQQGroup(group_id=event.group_id)
 
+
     @register_target_extractor(HonorNotifyEvent)
     @register_target_extractor(LuckyKingNotifyEvent)
     def _extract_group_notify_event(event: Event) -> TargetQQGroup:
         assert isinstance(event, (HonorNotifyEvent, LuckyKingNotifyEvent))
         return TargetQQGroup(group_id=event.group_id)
 
+
     @register_target_extractor(FriendRequestEvent)
     def _extract_friend_request_event(event: Event) -> TargetQQPrivate:
         assert isinstance(event, FriendRequestEvent)
         return TargetQQPrivate(user_id=event.user_id)
 
+
     @register_target_extractor(GroupRequestEvent)
     def _extract_group_request_event(event: Event) -> TargetQQGroup:
         assert isinstance(event, GroupRequestEvent)
         return TargetQQGroup(group_id=event.group_id)
+
 
     @register_target_extractor(PokeNotifyEvent)
     def _extract_poke_notify_event(
@@ -127,6 +142,7 @@ try:
         else:
             return TargetQQPrivate(user_id=event.user_id)
 
+
     @register_convert_to_arg(adapter, SupportedPlatform.qq_private)
     def _gen_private(target: PlatformTarget) -> Dict[str, Any]:
         assert isinstance(target, TargetQQPrivate)
@@ -134,6 +150,7 @@ try:
             "message_type": "private",
             "user_id": target.user_id,
         }
+
 
     @register_convert_to_arg(adapter, SupportedPlatform.qq_group)
     def _gen_group(target: PlatformTarget) -> Dict[str, Any]:
@@ -143,9 +160,11 @@ try:
             "group_id": target.group_id,
         }
 
+
     class OB11Receipt(Receipt):
         message_id: int
-        adapter_name: Literal[adapter] = adapter
+        adapter_name = adapter
+
 
         async def revoke(self):
             return await cast(BotOB11, self._get_bot()).delete_msg(
@@ -155,6 +174,7 @@ try:
         @property
         def raw(self) -> Any:
             return self.message_id
+
 
     @register_sender(SupportedAdapters.onebot_v11)
     async def send(
@@ -185,7 +205,9 @@ try:
         # https://github.com/botuniverse/onebot-11/blob/master/api/public.md#send_msg-%E5%8F%91%E9%80%81%E6%B6%88%E6%81%AF
         res_dict = await bot.send_msg(message=message_to_send, **target.arg_dict(bot))
         message_id = cast(int, res_dict["message_id"])
-        return OB11Receipt(bot_id=bot.self_id, message_id=message_id)
+        return OB11Receipt(bot_id=get_bot_id(bot), message_id=message_id)
+
+
 
     @AggregatedMessageFactory.register_aggregated_sender(adapter)
     async def aggregate_send(
@@ -224,6 +246,7 @@ try:
         else:  # pragma: no cover
             raise RuntimeError(f"{target.__class__.__name__} not supported")
 
+
     @register_list_targets(SupportedAdapters.onebot_v11)
     async def list_targets(bot: Bot) -> List[PlatformTarget]:
         assert isinstance(bot, BotOB11)
@@ -243,6 +266,13 @@ try:
             targets.append(target)
 
         return targets
+
+
+
+    @register_get_bot_id(adapter)
+    def _get_bot_id(bot: Bot):
+        assert isinstance(bot, BotOB11)
+        return bot.self_id
 
 except ImportError:
     pass

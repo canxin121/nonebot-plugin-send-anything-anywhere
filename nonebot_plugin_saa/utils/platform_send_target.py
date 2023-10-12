@@ -1,5 +1,6 @@
 import json
 from abc import ABC
+from typing_extensions import Annotated
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -15,16 +16,16 @@ from typing import (
     cast,
 )
 
-from nonebot.adapters import Bot, Event
 from pydantic import BaseModel
+from nonebot.params import Depends
+from nonebot.adapters import Bot, Event
 
-from .const import SupportedAdapters, SupportedPlatform
 from .helpers import extract_adapter_type
+from .const import SupportedAdapters, SupportedPlatform
 
 if TYPE_CHECKING:
     from .receipt import Receipt
     from .types import MessageFactory
-
 
 
 class PlatformTarget(BaseModel, ABC):
@@ -213,19 +214,6 @@ class TargetFeishuGroup(PlatformTarget):
     chat_id: str
 
 
-class TargetDiscordChannel(PlatformTarget):
-    """Discord频道,包括群聊和私聊
-
-    参数
-        channel_id: 频道 ID
-    """
-
-    platform_type: Literal[
-        SupportedPlatform.discord_channel
-    ] = SupportedPlatform.discord_channel
-    channel_id: int
-
-
 # this union type is for deserialize pydantic model with nested PlatformTarget
 AllSupportedPlatformTarget = Union[
     TargetQQGroup,
@@ -239,8 +227,8 @@ AllSupportedPlatformTarget = Union[
     TargetTelegramForum,
     TargetFeishuPrivate,
     TargetFeishuGroup,
-    TargetDiscordChannel
 ]
+
 
 ConvertToArg = Callable[[PlatformTarget], Dict[str, Any]]
 convert_to_arg_map: Dict[Tuple[SupportedPlatform, SupportedAdapters], ConvertToArg] = {}
@@ -267,7 +255,7 @@ def register_target_extractor(event: Type[Event]):
 
 
 def extract_target(event: Event) -> PlatformTarget:
-    """从事件中提取出发送目标，如果不能提取就抛出错误"""
+    "从事件中提取出发送目标，如果不能提取就抛出错误"
     for event_type in event.__class__.mro():
         if event_type in extractor_map:
             if not issubclass(event_type, Event):
@@ -277,7 +265,7 @@ def extract_target(event: Event) -> PlatformTarget:
 
 
 def get_target(event: Event) -> Optional[PlatformTarget]:
-    """从事件中提取出发送目标，如果不能提取就返回 None"""
+    "从事件中提取出发送目标，如果不能提取就返回 None"
     try:
         return extract_target(event)
     except RuntimeError:
@@ -299,6 +287,8 @@ def register_sender(adapter: SupportedAdapters):
 
     return wrapper
 
+
+SaaTarget = Annotated[PlatformTarget, Depends(get_target)]
 
 QQGuild_DMS = Callable[[TargetQQGuildDirect, Bot], Awaitable[int]]
 qqguild_dms_map: Dict[SupportedAdapters, QQGuild_DMS] = {}

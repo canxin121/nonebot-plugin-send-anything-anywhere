@@ -1,7 +1,9 @@
 import asyncio
 from abc import ABC
 from copy import deepcopy
+from warnings import warn
 from inspect import signature
+from typing_extensions import Self
 from typing import (
     Dict,
     List,
@@ -16,20 +18,17 @@ from typing import (
     Awaitable,
     cast,
 )
-from warnings import warn
 
 from nonebot.adapters import Bot, Event, Message, MessageSegment
-from nonebot.exception import PausedException, FinishedException, RejectedException
 from nonebot.matcher import current_bot, current_event, current_matcher
-from typing_extensions import Self
+from nonebot.exception import PausedException, FinishedException, RejectedException
 
 from .receipt import Receipt
 from .auto_select_bot import get_bot
 from .const import SupportedAdapters
-from .exceptions import FallbackToDefault, AdapterNotInstalled
 from .helpers import extract_adapter_type
+from .exceptions import FallbackToDefault, AdapterNotInstalled
 from .platform_send_target import PlatformTarget, sender_map, extract_target
-from .receipt import Receipt
 
 TMSF = TypeVar("TMSF", bound="MessageSegmentFactory")
 TMF = TypeVar("TMF", bound="MessageFactory")
@@ -138,7 +137,7 @@ class MessageSegmentFactory(ABC):
         adapter: SupportedAdapters,
         ms: Union[MessageSegment, CustomBuildFunc],
     ) -> Self:
-        """为某个 adapter 重写产生的 MessageSegment 或重写产生 MessageSegment 的方法"""
+        "为某个 adapter 重写产生的 MessageSegment 或重写产生 MessageSegment 的方法"
         self._register_custom_builder(adapter, ms)
         return self
 
@@ -157,11 +156,11 @@ class MessageSegmentFactory(ABC):
         return MessageFactory(other) + self
 
     async def send(self, *, at_sender=False, reply=False):
-        """回复消息，仅能用在事件响应器中"""
+        "回复消息，仅能用在事件响应器中"
         return await MessageFactory(self).send(at_sender=at_sender, reply=reply)
 
     async def send_to(self, target: PlatformTarget, bot: Optional[Bot] = None):
-        """主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"""
+        "主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"
         return await MessageFactory(self).send_to(target, bot)
 
     async def finish(self, *, at_sender=False, reply=False, **kwargs) -> NoReturn:
@@ -280,8 +279,7 @@ class MessageFactory(List[TMSF]):
         return deepcopy(self)
 
     async def send(self, *, at_sender=False, reply=False) -> "Receipt":
-        """回复消息，仅能用在事件响应器中"""
-
+        "回复消息，仅能用在事件响应器中"
         try:
             event = current_event.get()
             bot = current_bot.get()
@@ -294,8 +292,7 @@ class MessageFactory(List[TMSF]):
     async def send_to(
         self, target: PlatformTarget, bot: Optional[Bot] = None
     ) -> "Receipt":
-        """主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"""
-        
+        "主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"
         if bot is None:
             bot = get_bot(target)
         return await self._do_send(bot, target, None, False, False)
@@ -400,7 +397,7 @@ class AggregatedMessageFactory:
         return None
 
     async def send(self):
-        """回复消息，仅能用在事件响应器中"""
+        "回复消息，仅能用在事件响应器中"
         try:
             event = current_event.get()
             bot = current_bot.get()
@@ -411,7 +408,7 @@ class AggregatedMessageFactory:
         await self._do_send(bot, target, event)
 
     async def send_to(self, target: PlatformTarget, bot: Optional[Bot] = None):
-        """主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"""
+        "主动发送消息，将消息发送到 target，如果不传入 bot 将自动选择 bot（此功能需要显式开启）"
         if bot is None:
             bot = get_bot(target)
         await self._do_send(bot, target, None)

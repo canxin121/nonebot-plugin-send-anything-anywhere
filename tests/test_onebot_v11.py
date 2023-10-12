@@ -74,7 +74,7 @@ async def test_send(app: App):
         )
 
 
-async def test_send_with_reply(app: App):
+async def test_send_with_reply_and_revoke(app: App):
     from nonebot import get_driver, on_message
     from nonebot.adapters.onebot.v11 import (
         Bot,
@@ -89,7 +89,8 @@ async def test_send_with_reply(app: App):
 
     @matcher.handle()
     async def process(msg: PrivateMessageEvent):
-        await MessageFactory(Text("123")).send(reply=True, at_sender=True)
+        receipt = await MessageFactory(Text("123")).send(reply=True, at_sender=True)
+        await receipt.revoke()
 
     async with app.test_matcher(matcher) as ctx:
         adapter_obj = get_driver()._adapters[str(SupportedAdapters.onebot_v11)]
@@ -111,6 +112,8 @@ async def test_send_with_reply(app: App):
             },
             result={"message_id": 66778},
         )
+
+        ctx.should_call_api("delete_msg", data={"message_id": 66778})
 
 
 async def test_send_active(app: App):
